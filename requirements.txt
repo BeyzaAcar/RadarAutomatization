@@ -9,3 +9,4 @@ PyRect==0.2.0
 PyScreeze==1.0.1
 pytweening==1.2.0
 scipy==1.14.1
+matplotlib==3.0.0   

@@ -1,5 +1,5 @@
 RADAR PROJECT
-Bu proje, radar ve kamera verisi toplama, radar verisini işleme ve analiz etmeyi amaçlayan bir Python tabanlı sistemdir. Sistem, üç temel script ile çalışmaktadır:
+    Bu proje, radar ve kamera verisi toplama, radar verisini işleme ve analiz etmeyi amaçlayan bir Python tabanlı sistemdir. Sistem, üç temel script ile çalışmaktadır:
 
 1. auto_radar.py
     Amaç:
@@ -50,6 +50,7 @@ Bu proje, radar ve kamera verisi toplama, radar verisini işleme ve analiz etmey
 
 
 DİKKAT EDİLMESİ GEREKENLER
+
     auto_radar.py:
 
         DCA ve Trigger tıklama noktalarının koordinatları (örneğin, --dcax_, --dcay_, --trgx_, --trgy_) kod içinde hard-coded olarak ayarlanmıştır. Bu koordinatları manuel olarak değiştirmelisiniz.
