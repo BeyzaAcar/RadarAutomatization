@@ -51,7 +51,7 @@ def update_experiment_numbers(bin_files_dir, excel_file_path):
             print(f"{bin_file} için bir hata oluştu: {e}")
 
 if __name__ == "__main__":
-    bin_files_dir = r"C:/Users/user/Desktop/RADAR_PROJECT/Dataset/DenemeCamera"  # Bin dosyalarının olduğu klasör
+    bin_files_dir = r"C:/Users/user/Desktop/RADAR_PROJECT/Dataset/CameraData2"  # Bin dosyalarının olduğu klasör
     excel_file_path = r"C:/Users/user/Desktop/RADAR_PROJECT/Collection/deney_list2.csv"  # Excel dosyasının yolu
     
     update_experiment_numbers(bin_files_dir, excel_file_path)
