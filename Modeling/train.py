@@ -1,127 +1,68 @@
-# train.py
-
 import torch
+from torch.utils.data import DataLoader
+from torchvision import transforms
+from dataset import CameraFramesDataset
+from model import get_model
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader
-import torchvision.transforms as transforms
-import torchvision.models as models
 
-from custom_dataset import CustomSequenceDataset
+# Dataset ve DataLoader
+csv_path = "/content/drive/MyDrive/Dataset/dataset.csv"
+train_transform = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+])
 
-def main():
-    # 1) Dataset & DataLoader
-    train_transforms = transforms.Compose([
-        transforms.Resize((224, 224)),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                             std=[0.229, 0.224, 0.225])
-    ])
+train_dataset = CameraFramesDataset(csv_path=csv_path, split="train", transform=train_transform)
+val_dataset = CameraFramesDataset(csv_path=csv_path, split="val", transform=train_transform)
 
-    val_transforms = transforms.Compose([
-        transforms.Resize((224, 224)),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                             std=[0.229, 0.224, 0.225])
-    ])
+train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False)
 
-    train_dataset = CustomSequenceDataset(
-        csv_path="dataset.csv",
-        split="train",
-        transform=train_transforms
-    )
-    val_dataset = CustomSequenceDataset(
-        csv_path="dataset.csv",
-        split="val",
-        transform=val_transforms
-    )
+# Model
+num_classes = len(train_dataset.label_to_class)  # Sınıf sayısı
+model = get_model(num_classes=num_classes)
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model = model.to(device)
 
-    train_loader = DataLoader(train_dataset, batch_size=2, shuffle=True)
-    val_loader   = DataLoader(val_dataset,   batch_size=2, shuffle=False)
+# Loss ve optimizer
+criterion = nn.CrossEntropyLoss()
+optimizer = optim.Adam(model.parameters(), lr=0.0001)
 
-    num_classes = len(train_dataset.label2idx)  # Kaç farklı kişi var
+# Eğitim döngüsü
+num_epochs = 10
+for epoch in range(num_epochs):
+    # === Eğitim ===
+    model.train()
+    running_loss, running_corrects = 0.0, 0
+    for inputs, labels in train_loader:
+        inputs, labels = inputs.to(device), labels.to(device)
 
-    # 2) Model Kurulumu
-    base_model = models.resnet50(pretrained=True)
-    in_features = base_model.fc.in_features
-    base_model.fc = nn.Linear(in_features, num_classes)
+        optimizer.zero_grad()
+        outputs = model(inputs)
+        loss = criterion(outputs, labels)
+        loss.backward()
+        optimizer.step()
 
-    # 3) GPU Kontrolü
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    base_model.to(device)
+        running_loss += loss.item() * inputs.size(0)
+        running_corrects += (outputs.argmax(1) == labels).sum().item()
 
-    # 4) Loss ve Optimizer
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(base_model.parameters(), lr=1e-4)
+    epoch_loss = running_loss / len(train_dataset)
+    epoch_acc = running_corrects / len(train_dataset)
+    print(f"Epoch {epoch+1}/{num_epochs}, Loss: {epoch_loss:.4f}, Acc: {epoch_acc:.4f}")
 
-    # 5) Eğitim Döngüsü
-    num_epochs = 5
-    for epoch in range(num_epochs):
-        # === EĞİTİM ===
-        base_model.train()
-        running_loss, running_correct = 0.0, 0
-        for frames, labels in train_loader:
-            # frames.shape = (batch_size, N, C, H, W)
-            # Ancak ResNet'e (N, C, H, W) boyutu ile beslememiz gerekiyor
-            # Yani (batch_size*N, C, H, W) olacak
+    # === Doğrulama ===
+    model.eval()
+    val_loss, val_corrects = 0.0, 0
+    with torch.no_grad():
+        for inputs, labels in val_loader:
+            inputs, labels = inputs.to(device), labels.to(device)
+            outputs = model(inputs)
+            loss = criterion(outputs, labels)
+            val_loss += loss.item() * inputs.size(0)
+            val_corrects += (outputs.argmax(1) == labels).sum().item()
 
-            frames = frames.to(device)
-            labels = labels.to(device)
-
-            b, n, c, h, w = frames.shape
-            frames_reshaped = frames.view(b*n, c, h, w)  # Hepsini arka arkaya
-
-            optimizer.zero_grad()
-            outputs = base_model(frames_reshaped)
-            
-            # outputs.shape = (batch_size*N, num_classes)
-            # Bizde batch_size*N örnek var, label sayısı ise batch_size
-            # AMA labels boyutu sadece (batch_size) => Her sample bir "tekrar" ise,
-            # Normalde "tekrarın" hepsine aynı label gelecek.
-            # Dolayısıyla labels'i tekrarlamamız lazım => (N kere)
-            labels_expanded = labels.unsqueeze(1).repeat(1, n).view(-1)
-
-            loss = criterion(outputs, labels_expanded)
-            loss.backward()
-            optimizer.step()
-
-            running_loss += loss.item() * (b*n)
-            _, preds = torch.max(outputs, 1)
-            running_correct += torch.sum(preds == labels_expanded).item()
-
-        epoch_loss = running_loss / len(train_dataset)  # Toplam sample sayısı
-        epoch_acc = running_correct / len(train_dataset)
-
-        # === DOĞRULAMA ===
-        base_model.eval()
-        val_loss, val_correct = 0.0, 0
-        with torch.no_grad():
-            for frames, labels in val_loader:
-                frames = frames.to(device)
-                labels = labels.to(device)
-
-                b, n, c, h, w = frames.shape
-                frames_reshaped = frames.view(b*n, c, h, w)
-
-                outputs = base_model(frames_reshaped)
-                labels_expanded = labels.unsqueeze(1).repeat(1, n).view(-1)
-
-                loss = criterion(outputs, labels_expanded)
-                val_loss += loss.item() * (b*n)
-
-                _, preds = torch.max(outputs, 1)
-                val_correct += torch.sum(preds == labels_expanded).item()
-
-        val_loss = val_loss / len(val_dataset)
-        val_acc = val_correct / len(val_dataset)
-
-        print(f"Epoch [{epoch+1}/{num_epochs}] "
-              f"Train Loss: {epoch_loss:.4f}, Train Acc: {epoch_acc:.4f} | "
-              f"Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}")
-
-    # 6) Modeli Kaydet
-    torch.save(base_model.state_dict(), "model_weights.pth")
-    print("Eğitim tamamlandı ve model_weights.pth kaydedildi.")
-
-if __name__ == "__main__":
-    main()
+    val_loss = val_loss / len(val_dataset)
+    val_acc = val_corrects / len(val_dataset)
+    print(f"Validation Loss: {val_loss:.4f}, Validation Acc: {val_acc:.4f}")
