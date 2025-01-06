@@ -1,0 +1,70 @@
+import os
+import numpy as np
+import matplotlib.pyplot as plt
+from mmwave.dataloader import DCA1000
+import mmwave.dsp as dsp
+
+# .bin dosyaları klasörü yolu
+bin_dosyaları_klasörü_yolu = r"C:\Users\Hp\Desktop\5.10.2024\new\kutu koyma sol"
+
+# Görsellerin kaydedileceği klasör yolu
+gorseller_klasoru_yolu = r"C:\Users\Hp\Desktop\5.10.2024\new_grafik\kutu koyma sol"
+
+def process_bin_to_images(file_path, output_folder):
+    num_tx_antennas = 2
+    numChirpsPerFrame = 128
+    numFrames = 128
+    numRxAntennas = 4
+    numADCSamples = 256
+
+    # Verileri yükle
+    adc_data = np.fromfile(file_path, dtype=np.uint16)
+    adc_data = adc_data.reshape(numFrames, -1)
+    adc_data = np.apply_along_axis(DCA1000.organize, 1, adc_data, num_chirps=numChirpsPerFrame, num_rx=numRxAntennas, num_samples=numADCSamples)
+
+    print(f"Data Loaded from {file_path} with shape {adc_data.shape}")
+
+    # Klasörü oluştur
+    os.makedirs(output_folder, exist_ok=True)
+
+    # Her bir frame'i işleyip görsel oluştur
+    for i in range(numFrames):
+        frame = adc_data[i]
+        range_fft_data = np.fft.fft(frame, axis=-1)
+        assert range_fft_data.shape == (numChirpsPerFrame, numRxAntennas, numADCSamples), "[ERROR] Radar cube is not the correct shape!"
+        fft2d_in = dsp.separate_tx(range_fft_data, num_tx_antennas, vx_axis=1, axis=0)
+        fft2d_in = np.transpose(fft2d_in, axes=(2, 1, 0))
+        fft2d_out = np.fft.fft(fft2d_in)
+        aoa_input = fft2d_out
+
+        fft2d_log_abs = 40 * np.log10(np.abs(fft2d_out) + 1e-10)
+        det_matrix = np.sum(fft2d_log_abs, axis=1)
+        det_matrix_vis = np.fft.fftshift(det_matrix, axes=1)
+
+        # Range-Doppler plotu oluştur ve kaydet
+        plt.figure(figsize=(12, 6))
+        plt.imshow(det_matrix_vis / det_matrix_vis.max(), aspect='auto', cmap='jet')
+        plt.title(f"Range-Doppler plot {i} - {os.path.basename(file_path)}")
+        plt.colorbar(label='Amplitude (dBFS)')
+        plt.xlabel('Range-fft')
+        plt.ylabel('Doppler-fft')
+
+        # Görseli kaydet
+        plt.savefig(os.path.join(output_folder, f'RangeDoppler_{i}.png'))
+        plt.close()
+
+# .bin dosyaları için işlem yap
+bin_files_found = False
+for file_name in os.listdir(bin_dosyaları_klasörü_yolu):
+    if file_name.endswith('.bin'):
+        bin_files_found = True
+        file_path = os.path.join(bin_dosyaları_klasörü_yolu, file_name)
+        
+        # Her dosya için uygun bir klasör oluştur
+        klasor_yolu_isimli = os.path.join(gorseller_klasoru_yolu, os.path.splitext(file_name)[0])
+        process_bin_to_images(file_path, klasor_yolu_isimli)
+
+if not bin_files_found:
+    print("Klasörde '.bin' uzantılı dosya bulunamadı.")
+
+print("Görseller başarıyla oluşturuldu ve klasörlere kaydedildi.")
